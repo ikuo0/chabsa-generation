@@ -19,9 +19,9 @@ DEFAULT_TEMPERATURE = 1.0
 
 # 予測単語の採用ルール: max(P * Γ ^ t, min_prob)
 # 値はあとから容易に調整できるように定数として定義しておく。
-DEFAULT_CUMULATIVE_PROB_P = 0.98
+DEFAULT_CUMULATIVE_PROB_P = 0.80
 DEFAULT_CUMULATIVE_PROB_GAMMA = 0.995
-DEFAULT_CUMULATIVE_PROB_MIN = 1.0
+DEFAULT_CUMULATIVE_PROB_MIN = 0.4
 
 
 def _project_root() -> Path:
@@ -372,7 +372,7 @@ python src/uca009/ucb002/main.py none
 python src/uca009/ucb002/main.py none10
 python src/uca009/ucb002/main.py take 今日はとても良い決算でした
 
-CHABSA_PREDICT_TOP_K=5 python src/uca009/ucb002/main.py none10
+CHABSA_PREDICT_TOP_K=10 python src/uca009/ucb002/main.py none10
 
 # 例: 上位2件からランダムサンプリング（デフォルト）
 CHABSA_PREDICT_TOP_K=2 python src/uca009/ucb002/main.py none10
