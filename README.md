@@ -6,13 +6,13 @@ python -m venv /opt/venvs/.venv
 source /opt/venvs/.venv/bin/activate
 export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 source ./activate_tf_gpu.sh
-export PROJECT_ROOT_DIR=/workspaces/chabsa-document-classification
+export PROJECT_ROOT_DIR=/workspaces/chabsa-generation
 
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-mkdir chabsa-document-classification
-cd chabsa-document-classification
+mkdir chabsa-generation
+cd chabsa-generation
 git init
 
 ```

@@ -17,6 +17,12 @@ MAX_PREDICT_WORDS = 80
 DEFAULT_TOP_K = 2
 DEFAULT_TEMPERATURE = 1.0
 
+# 予測単語の採用ルール: max(P * Γ ^ t, min_prob)
+# 値はあとから容易に調整できるように定数として定義しておく。
+DEFAULT_CUMULATIVE_PROB_P = 0.98
+DEFAULT_CUMULATIVE_PROB_GAMMA = 0.995
+DEFAULT_CUMULATIVE_PROB_MIN = 1.0
+
 
 def _project_root() -> Path:
     # src/uca009/ucb002/main.py -> project root
@@ -130,34 +136,50 @@ def _model_expects_sparse_input(model: tf.keras.Model) -> bool:
 def _sample_from_logits(
     logits_1d: np.ndarray,
     *,
+    current_length: int,
     top_k: int,
     temperature: float,
     rng: np.random.Generator,
 ) -> int:
     if temperature <= 0.0:
         raise ValueError(f"temperature must be > 0: {temperature}")
-    if top_k <= 0:
-        raise ValueError(f"top_k must be positive: {top_k}")
+    if top_k < 0:
+        raise ValueError(f"top_k must be >= 0: {top_k}")
 
-    vocab_size = int(logits_1d.shape[0])
-    effective_k = min(top_k, vocab_size)
-
-    if effective_k == vocab_size:
-        candidate_indexes = np.arange(vocab_size)
-        candidate_logits = logits_1d
-    else:
-        candidate_indexes = np.argpartition(logits_1d, -effective_k)[-effective_k:]
-        candidate_logits = logits_1d[candidate_indexes]
-
-    scaled = candidate_logits / float(temperature)
+    scaled = logits_1d / float(temperature)
     scaled = scaled - np.max(scaled)
     probs = np.exp(scaled)
     probs_sum = float(np.sum(probs))
     if probs_sum <= 0.0:
-        return int(candidate_indexes[int(np.argmax(candidate_logits))])
+        return int(np.argmax(logits_1d))
     probs = probs / probs_sum
 
-    sampled_index = int(rng.choice(len(candidate_indexes), p=probs))
+    sorted_indexes = np.argsort(probs)[::-1]
+    sorted_probs = probs[sorted_indexes]
+
+    # UCB002: 累積確率 N を max(P * Γ ^ t, min_prob) で決定する。
+    cumulative_prob_n = max(
+        DEFAULT_CUMULATIVE_PROB_P * (DEFAULT_CUMULATIVE_PROB_GAMMA ** float(current_length)),
+        DEFAULT_CUMULATIVE_PROB_MIN,
+    )
+    cumulative_prob_n = float(np.clip(cumulative_prob_n, 0.0, 1.0))
+
+    cumulative = np.cumsum(sorted_probs)
+    candidate_count = int(np.searchsorted(cumulative, cumulative_prob_n, side="left")) + 1
+    candidate_count = max(1, min(candidate_count, len(sorted_indexes)))
+
+    # 既存互換: top_k > 0 の場合は累積確率で得た候補数に上限を掛ける。
+    if top_k > 0:
+        candidate_count = min(candidate_count, top_k)
+
+    candidate_indexes = sorted_indexes[:candidate_count]
+    candidate_probs = probs[candidate_indexes]
+    candidate_probs_sum = float(np.sum(candidate_probs))
+    if candidate_probs_sum <= 0.0:
+        return int(candidate_indexes[0])
+    candidate_probs = candidate_probs / candidate_probs_sum
+
+    sampled_index = int(rng.choice(len(candidate_indexes), p=candidate_probs))
     return int(candidate_indexes[sampled_index])
 
 
@@ -166,6 +188,7 @@ def _predict_next_token_id(
     context_ids: list[int],
     vocab_size: int,
     *,
+    current_length: int,
     top_k: int,
     temperature: float,
     rng: np.random.Generator,
@@ -179,6 +202,7 @@ def _predict_next_token_id(
     logits_1d = np.asarray(logits[0].numpy(), dtype=np.float64)
     next_token_id = _sample_from_logits(
         logits_1d,
+        current_length=current_length,
         top_k=top_k,
         temperature=temperature,
         rng=rng,
@@ -218,6 +242,7 @@ def predict_sequence(
             model=model,
             context_ids=context_ids,
             vocab_size=vocab_size,
+            current_length=max(0, len(sequence) - WINDOW_WIDTH),
             top_k=top_k,
             temperature=temperature,
             rng=rng,
@@ -346,6 +371,8 @@ if __name__ == "__main__":
 python src/uca009/ucb002/main.py none
 python src/uca009/ucb002/main.py none10
 python src/uca009/ucb002/main.py take 今日はとても良い決算でした
+
+CHABSA_PREDICT_TOP_K=5 python src/uca009/ucb002/main.py none10
 
 # 例: 上位2件からランダムサンプリング（デフォルト）
 CHABSA_PREDICT_TOP_K=2 python src/uca009/ucb002/main.py none10
